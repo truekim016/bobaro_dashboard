@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경영 분석 대시보드</title>
+    
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- SheetJS / XLSX (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+    <!-- Google Fonts: Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['"Noto Sans KR"', 'sans-serif'] },
+                    colors: {
+                        corp: {
+                            blue: '#1e3a8a',    // Navy
+                            light: '#eff6ff',   // Light Blue
+                            gray: '#f3f4f6',
+                            border: '#e5e7eb',
+                            text: '#1f2937'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #f8fafc; color: #1f2937; }
+        
+        /* Custom Scrollbar for dropdowns */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+        /* Print Optimization */
+        @media print {
+            body { background-color: white; }
+            .no-print { display: none !important; }
+            .print-full-width { width: 100% !important; max-width: 100% !important; margin: 0; padding: 0; }
+            .shadow-sm, .shadow-md { box-shadow: none !important; border: 1px solid #e5e7eb; }
+            canvas { max-height: 400px !important; }
+            .page-break { page-break-before: always; }
+        }
+
+        /* Dropdown transition */
+        .dropdown-menu { display: none; }
+        .dropdown-menu.active { display: block; }
+    </style>
+</head>
+<body class="font-sans antialiased">
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white/80 z-50 flex flex-col items-center justify-center">
+        <div class="w-12 h-12 border-4 border-corp-blue border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p class="text-corp-blue font-medium text-lg">데이터를 불러오는 중입니다...</p>
+        <p class="text-sm text-gray-500 mt-2">구글 시트를 분석하고 있습니다.</p>
+    </div>
+
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-corp-blue text-white shadow-md print-full-width">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    <h1 class="text-xl font-bold tracking-tight">경영 성과 대시보드</h1>
+                </div>
+                <div class="flex items-center gap-4 no-print">
+                    <span id="dataStatus" class="text-xs bg-white/20 px-2 py-1 rounded">데이터 연결 대기</span>
+                    <button onclick="window.print()" class="flex items-center gap-2 bg-white/10 hover:bg-white/20 transition px-3 py-1.5 rounded text-sm font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        보고서 인쇄
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <div class="bg-white border-b border-corp-border no-print">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button onclick="switchTab('overview')" id="tab-overview" class="border-corp-blue text-corp-blue whitespace-nowrap py-4 px-1 border-b-2 font-bold text-sm">
+                        Overview (종합)
+                    </button>
+                    <button onclick="switchTab('company')" id="tab-company" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        업체별 성과
+                    </button>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print-full-width">
+            
+            <!-- Filters Section -->
+            <section class="bg-white rounded-lg shadow-sm border border-corp-border p-4 mb-6 no-print relative z-10">
+                <div class="flex flex-col md:flex-row justify-between gap-4">
+                    
+                    <!-- Date Range -->
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-700 mb-1">분석 기간 (Date Range)</label>
+                        <div class="flex items-center gap-2">
+                            <input type="date" id="dateStart" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-corp-blue focus:border-corp-blue outline-none w-full">
+                            <span class="text-gray-500">~</span>
+                            <input type="date" id="dateEnd" class="border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-corp-blue focus:border-corp-blue outline-none w-full">
+                        </div>
+                    </div>
+
+                    <!-- Multi Filters -->
+                    <div class="flex-1 flex gap-3">
+                        <!-- Filter 1: 월평균매출 -->
+                        <div class="relative flex-1" id="filter-wrapper-avgRev">
+                            <label class="block text-xs font-bold text-gray-700 mb-1">월평균매출</label>
+                            <button onclick="toggleDropdown('avgRev')" class="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm text-left flex justify-between items-center focus:ring-1 focus:ring-corp-blue">
+                                <span class="truncate" id="label-avgRev">전체 선택</span>
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            <div id="dropdown-avgRev" class="dropdown-menu absolute mt-1 w-full bg-white border border-gray-200 rounded shadow-lg z-20">
+                                <div class="p-2 border-b border-gray-100 flex justify-between gap-2">
+                                    <button onclick="selectAll('avgRev', true)" class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded w-full">전체 선택</button>
+                                    <button onclick="selectAll('avgRev', false)" class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded w-full">해제</button>
+                                </div>
+                                <div class="max-h-48 overflow-y-auto custom-scrollbar p-2" id="list-avgRev"></div>
+                            </div>
+                        </div>
+
+                        <!-- Filter 2: 당월매출액 -->
+                        <div class="relative flex-1" id="filter-wrapper-currRev">
+                            <label class="block text-xs font-bold text-gray-700 mb-1">당월매출액</label>
+                            <button onclick="toggleDropdown('currRev')" class="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm text-left flex justify-between items-center focus:ring-1 focus:ring-corp-blue">
+                                <span class="truncate" id="label-currRev">전체 선택</span>
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            <div id="dropdown-currRev" class="dropdown-menu absolute mt-1 w-full bg-white border border-gray-200 rounded shadow-lg z-20">
+                                <div class="p-2 border-b border-gray-100 flex justify-between gap-2">
+                                    <button onclick="selectAll('currRev', true)" class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded w-full">전체 선택</button>
+                                    <button onclick="selectAll('currRev', false)" class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded w-full">해제</button>
+                                </div>
+                                <div class="max-h-48 overflow-y-auto custom-scrollbar p-2" id="list-currRev"></div>
+                            </div>
+                        </div>
+
+                        <!-- Filter 3: 운영일 -->
+                        <div class="relative flex-1" id="filter-wrapper-opDays">
+                            <label class="block text-xs font-bold text-gray-700 mb-1">운영일 기준</label>
+                            <button onclick="toggleDropdown('opDays')" class="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm text-left flex justify-between items-center focus:ring-1 focus:ring-corp-blue">
+                                <span class="truncate" id="label-opDays">전체 선택</span>
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            <div id="dropdown-opDays" class="dropdown-menu absolute mt-1 w-full bg-white border border-gray-200 rounded shadow-lg z-20">
+                                <div class="p-2 border-b border-gray-100 flex justify-between gap-2">
+                                    <button onclick="selectAll('opDays', true)" class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded w-full">전체 선택</button>
+                                    <button onclick="selectAll('opDays', false)" class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded w-full">해제</button>
+                                </div>
+                                <div class="max-h-48 overflow-y-auto custom-scrollbar p-2" id="list-opDays"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Summary -->
+                <div class="mt-4 pt-3 border-t border-gray-100">
+                    <div class="text-xs text-gray-500 font-medium flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                        현재 적용 필터:
+                        <span id="filterSummary" class="text-corp-blue font-semibold">전체 데이터 조회 중</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 1: Overview -->
+            <div id="view-overview" class="space-y-6">
+                
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-lg p-5 shadow-sm border border-corp-border border-l-4 border-l-corp-blue">
+                        <p class="text-sm text-gray-500 font-bold mb-1">조회 기간 총 매출</p>
+                        <h3 class="text-2xl font-black text-gray-800" id="kpi-totalRev">₩0</h3>
+                    </div>
+                    <div class="bg-white rounded-lg p-5 shadow-sm border border-corp-border border-l-4 border-l-green-500">
+                        <p class="text-sm text-gray-500 font-bold mb-1">평균 매출액</p>
+                        <h3 class="text-2xl font-black text-gray-800" id="kpi-avgRev">₩0</h3>
+                    </div>
+                    <div class="bg-white rounded-lg p-5 shadow-sm border border-corp-border border-l-4 border-l-yellow-500">
+                        <p class="text-sm text-gray-500 font-bold mb-1">조회된 건수</p>
+                        <h3 class="text-2xl font-black text-gray-800" id="kpi-count">0건</h3>
+                    </div>
+                    <div class="bg-white rounded-lg p-5 shadow-sm border border-corp-border border-l-4 border-l-purple-500">
+                        <p class="text-sm text-gray-500 font-bold mb-1">참여 업체 수</p>
+                        <h3 class="text-2xl font-black text-gray-800" id="kpi-companies">0개</h3>
+                    </div>
+                </div>
+
+                <!-- Chart -->
+                <div class="bg-white rounded-lg shadow-sm border border-corp-border p-5">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-gray-800">월별 매출 추이</h2>
+                    </div>
+                    <div class="relative h-80 w-full">
+                        <canvas id="monthlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: By Company -->
+            <div id="view-company" class="hidden space-y-6">
+                <div class="bg-white rounded-lg shadow-sm border border-corp-border p-5">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4">업체별 성과 요약 (Dashboard_업체별)</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">업체명</th>
+                                    <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">기록 건수</th>
+                                    <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">총 누적 매출</th>
+                                    <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">건당 평균 매출</th>
+                                </tr>
+                            </thead>
+                            <tbody id="companyTableBody" class="bg-white divide-y divide-gray-200">
+                                <!-- Data will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // --- 1. State & Configuration ---
+        const SPREADSHEET_ID = '1G11Ww-aE5EQPZ2rWusHrW511EyXY9lNmxpjuAeR0N_8';
+        const EXPORT_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=xlsx`;
+        
+        let rawDatabase = [];
+        let rawCompanyList = [];
+        let filteredData = [];
+        
+        // 동적으로 파악할 컬럼 키들
+        let colKeys = {
+            date: null,
+            company: null,
+            avgRev: null,  // 월평균매출
+            currRev: null, // 당월매출액
+            opDays: null   // 운영일
+        };
+
+        let filterState = {
+            avgRev: new Set(),
+            currRev: new Set(),
+            opDays: new Set()
+        };
+
+        let chartInstance = null;
+        let debounceTimer;
+
+        // --- 2. Initialization & Data Fetching ---
+        async function initDashboard() {
+            try {
+                // Fetch XLSX file directly (Requires sheet to be public)
+                const response = await fetch(EXPORT_URL);
+                if (!response.ok) throw new Error("네트워크 응답이 실패했습니다. (CORS 또는 권한 문제 가능성)");
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+                
+                // Read 'Database' sheet
+                const dbSheetName = workbook.SheetNames.find(n => n.includes('Database')) || workbook.SheetNames[0];
+                rawDatabase = XLSX.utils.sheet_to_json(workbook.Sheets[dbSheetName], { defval: "" });
+                
+                // Read 'Company_List' sheet
+                const compSheetName = workbook.SheetNames.find(n => n.includes('Company_List')) || workbook.SheetNames[1];
+                if(compSheetName) {
+                    rawCompanyList = XLSX.utils.sheet_to_json(workbook.Sheets[compSheetName], { defval: "" });
+                }
+
+                document.getElementById('dataStatus').textContent = '실시간 연결됨';
+                document.getElementById('dataStatus').classList.add('bg-green-500/20', 'text-green-100');
+
+            } catch (error) {
+                console.warn("구글 시트 연동 실패. 시트가 비공개 상태일 수 있습니다. 모의 데이터로 대체합니다.", error);
+                document.getElementById('dataStatus').textContent = '모의 데이터 (연결 실패)';
+                document.getElementById('dataStatus').classList.add('bg-yellow-500/20', 'text-yellow-100');
+                generateMockData();
+            }
+
+            if (rawDatabase.length === 0) {
+                generateMockData();
+            }
+
+            identifyColumns();
+            normalizeDates();
+            initializeFilterUI();
+            
+            // Set Default Date (당월)
+            setDefaultDateRange();
+
+            document.getElementById('loadingOverlay').style.display = 'none';
+            applyFilters(); // Initial render
+        }
+
+        // 구글시트 연동 실패 시 실행을 위한 목업 데이터 생성기
+        function generateMockData() {
+            rawDatabase = [];
+            const companies = ['(주)알파', '(주)베타테크', '감마솔루션', '델타네트웍스'];
+            const avgRevs = ['1천만 이하', '1천만~5천만', '5천만 이상'];
+            const opDaysList = ['20일 미만', '20일~25일', '25일 이상'];
+            
+            let currentDate = new Date();
+            currentDate.setMonth(currentDate.getMonth() - 6); // 6개월 전부터
+
+            for (let i = 0; i < 200; i++) {
+                let d = new Date(currentDate.getTime() + Math.random() * 180 * 24 * 60 * 60 * 1000);
+                let rev = Math.floor(Math.random() * 50000000) + 5000000;
+                rawDatabase.push({
+                    "날짜": d.toISOString().split('T')[0],
+                    "업체명": companies[Math.floor(Math.random() * companies.length)],
+                    "월평균매출": avgRevs[Math.floor(Math.random() * avgRevs.length)],
+                    "당월매출액": rev,
+                    "운영일": opDaysList[Math.floor(Math.random() * opDaysList.length)]
+                });
+            }
+            
+            // Sort by date
+            rawDatabase.sort((a,b) => new Date(a["날짜"]) - new Date(b["날짜"]));
+        }
+
+        // --- 3. Data Processing ---
+        function identifyColumns() {
+            if (rawDatabase.length === 0) return;
+            const keys = Object.keys(rawDatabase[0]);
+            
+            // 1번째 컬럼은 날짜
+            colKeys.date = keys[0];
+            
+            // 키워드 매칭으로 찾기
+            colKeys.company = keys.find(k => k.includes('업체') || k.includes('회사') || k.includes('Company')) || keys[1];
+            colKeys.avgRev = keys.find(k => k.includes('월평균매출')) || null;
+            colKeys.currRev = keys.find(k => k.includes('당월매출액') || k.includes('매출')) || null;
+            colKeys.opDays = keys.find(k => k.includes('운영일')) || null;
+        }
+
+        function normalizeDates() {
+            rawDatabase.forEach(row => {
+                let val = row[colKeys.date];
+                if (val instanceof Date) {
+                    row._jsDate = val;
+                } else if (typeof val === 'number') {
+                    // Excel serial date to JS Date
+                    row._jsDate = new Date(Math.round((val - 25569) * 86400 * 1000));
+                } else if (typeof val === 'string') {
+                    row._jsDate = new Date(val);
+                } else {
+                    row._jsDate = new Date(); // fallback
+                }
+                row._dateStr = row._jsDate.toISOString().split('T')[0];
+            });
+        }
+
+        function setDefaultDateRange() {
+            if (rawDatabase.length === 0) return;
+
+            // 대량 데이터에서 Math.min/max로 인한 Maximum call stack size exceeded 에러 방지를 위해 루프 방식으로 안전하게 비교
+            let minDate = rawDatabase[0]._jsDate;
+            let maxDate = rawDatabase[0]._jsDate;
+
+            for (let i = 1; i < rawDatabase.length; i++) {
+                const current = rawDatabase[i]._jsDate;
+                if (current < minDate) minDate = current;
+                if (current > maxDate) maxDate = current;
+            }
+            
+            // 기본값: 당월 (데이터의 가장 최근 달을 당월로 간주)
+            let defaultStart = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+            let defaultEnd = new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 0); // 마지막 날
+
+            document.getElementById('dateStart').value = defaultStart.toISOString().split('T')[0];
+            document.getElementById('dateEnd').value = defaultEnd.toISOString().split('T')[0];
+            
+            // Set min/max boundaries
+            document.getElementById('dateStart').min = minDate.toISOString().split('T')[0];
+            document.getElementById('dateEnd').max = maxDate.toISOString().split('T')[0];
+        }
+
+        // --- 4. Filter UI & Logic ---
+        function getUniqueValues(colKey) {
+            if (!colKey) return [];
+            const vals = rawDatabase.map(r => r[colKey]).filter(v => v !== null && v !== "");
+            return [...new Set(vals)].sort();
+        }
+
+        function initializeFilterUI() {
+            const setups = [
+                { id: 'avgRev', key: colKeys.avgRev },
+                { id: 'currRev', key: colKeys.currRev },
+                { id: 'opDays', key: colKeys.opDays }
+            ];
+
+            setups.forEach(setup => {
+                const listEl = document.getElementById(`list-${setup.id}`);
+                const wrapper = document.getElementById(`filter-wrapper-${setup.id}`);
+                
+                if (!setup.key) {
+                    wrapper.style.opacity = '0.5';
+                    wrapper.style.pointerEvents = 'none';
+                    document.getElementById(`label-${setup.id}`).textContent = "데이터 없음";
+                    return;
+                }
+
+                const uniqueVals = getUniqueValues(setup.key);
+                filterState[setup.id] = new Set(uniqueVals); // All selected by default
+
+                listEl.innerHTML = uniqueVals.map(val => `
+                    <label class="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                        <input type="checkbox" class="rounded text-corp-blue focus:ring-corp-blue" 
+                            value="${val}" checked onchange="handleCheckboxChange('${setup.id}', this.value, this.checked)">
+                        <span class="text-sm text-gray-700 truncate" title="${val}">${formatCurrencyIfNumber(val)}</span>
+                    </label>
+                `).join('');
+                updateDropdownLabel(setup.id);
+            });
+
+            // Date Pickers Event
+            document.getElementById('dateStart').addEventListener('change', debouncedApplyFilters);
+            document.getElementById('dateEnd').addEventListener('change', debouncedApplyFilters);
+        }
+
+        function formatCurrencyIfNumber(val) {
+            if(!isNaN(val) && val !== "") {
+                return Number(val).toLocaleString('ko-KR');
+            }
+            return val;
+        }
+
+        function handleCheckboxChange(filterId, value, isChecked) {
+            if (isChecked) {
+                filterState[filterId].add(value);
+            } else {
+                filterState[filterId].delete(value);
+            }
+            updateDropdownLabel(filterId);
+            debouncedApplyFilters();
+        }
+
+        function selectAll(filterId, isSelectAll) {
+            const checkboxes = document.querySelectorAll(`#list-${filterId} input[type="checkbox"]`);
+            checkboxes.forEach(cb => {
+                cb.checked = isSelectAll;
+                if (isSelectAll) filterState[filterId].add(cb.value);
+                else filterState[filterId].delete(cb.value);
+            });
+            updateDropdownLabel(filterId);
+            debouncedApplyFilters();
+        }
+
+        function updateDropdownLabel(filterId) {
+            const totalCount = getUniqueValues(colKeys[filterId]).length;
+            const selectedCount = filterState[filterId].size;
+            const labelEl = document.getElementById(`label-${filterId}`);
+            
+            if (selectedCount === totalCount) labelEl.textContent = "전체 선택";
+            else if (selectedCount === 0) labelEl.textContent = "선택 없음";
+            else labelEl.textContent = `${selectedCount}개 선택됨`;
+        }
+
+        function toggleDropdown(filterId) {
+            // Close others
+            ['avgRev', 'currRev', 'opDays'].forEach(id => {
+                if (id !== filterId) document.getElementById(`dropdown-${id}`).classList.remove('active');
+            });
+            document.getElementById(`dropdown-${filterId}`).classList.toggle('active');
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.relative')) {
+                ['avgRev', 'currRev', 'opDays'].forEach(id => {
+                    const dd = document.getElementById(`dropdown-${id}`);
+                    if(dd) dd.classList.remove('active');
+                });
+            }
+        });
+
+        // Debounce implementation for performance
+        function debouncedApplyFilters() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(applyFilters, 300);
+        }
+
+        function applyFilters() {
+            const startStr = document.getElementById('dateStart').value;
+            const endStr = document.getElementById('dateEnd').value;
+            
+            filteredData = rawDatabase.filter(row => {
+                // 1. Date filter
+                if (startStr && row._dateStr < startStr) return false;
+                if (endStr && row._dateStr > endStr) return false;
+                
+                // 2. Multi Filters (AND Condition)
+                if (colKeys.avgRev && !filterState.avgRev.has(String(row[colKeys.avgRev]))) return false;
+                if (colKeys.currRev && !filterState.currRev.has(String(row[colKeys.currRev]))) return false;
+                if (colKeys.opDays && !filterState.opDays.has(String(row[colKeys.opDays]))) return false;
+                
+                return true;
+            });
+
+            updateFilterSummary(startStr, endStr);
+            renderDashboard();
+        }
+
+        function updateFilterSummary(start, end) {
+            const summaryEl = document.getElementById('filterSummary');
+            let text = `${start} ~ ${end}`;
+            
+            ['avgRev', 'currRev', 'opDays'].forEach(id => {
+                if (!colKeys[id]) return;
+                const total = getUniqueValues(colKeys[id]).length;
+                const sel = filterState[id].size;
+                const name = document.getElementById(`filter-wrapper-${id}`).querySelector('label').textContent;
+                
+                if (sel < total && sel > 0) {
+                    text += ` | ${name}: ${sel}개 선택`;
+                } else if (sel === 0) {
+                    text += ` | ${name}: 제외됨`;
+                }
+            });
+            
+            summaryEl.textContent = text;
+        }
+
+        // --- 5. Rendering (Chart.js & Tables) ---
+        function renderDashboard() {
+            // KPI 계산
+            let totalRev = 0;
+            let companies = new Set();
+            
+            filteredData.forEach(row => {
+                let rev = Number(row[colKeys.currRev] || 0);
+                if (!isNaN(rev)) totalRev += rev;
+                if (row[colKeys.company]) companies.add(row[colKeys.company]);
+            });
+
+            document.getElementById('kpi-totalRev').textContent = `₩${totalRev.toLocaleString('ko-KR')}`;
+            document.getElementById('kpi-avgRev').textContent = filteredData.length ? `₩${Math.round(totalRev / filteredData.length).toLocaleString('ko-KR')}` : '₩0';
+            document.getElementById('kpi-count').textContent = `${filteredData.length.toLocaleString('ko-KR')}건`;
+            document.getElementById('kpi-companies').textContent = `${companies.size.toLocaleString('ko-KR')}개`;
+
+            renderChart();
+            renderCompanyTable();
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('monthlyChart').getContext('2d');
+            
+            // 데이터 집계 (YYYY-MM 기준)
+            const monthlyData = {};
+            filteredData.forEach(row => {
+                const month = row._dateStr.substring(0, 7); // YYYY-MM
+                let rev = Number(row[colKeys.currRev] || 0);
+                if (isNaN(rev)) rev = 0;
+                
+                if (!monthlyData[month]) monthlyData[month] = 0;
+                monthlyData[month] += rev;
+            });
+
+            // 정렬
+            const labels = Object.keys(monthlyData).sort();
+            const data = labels.map(l => monthlyData[l]);
+
+            if (chartInstance) {
+                chartInstance.destroy(); // 인스턴스 재사용/초기화
+            }
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '월별 총 매출액',
+                        data: data,
+                        backgroundColor: '#1e3a8a', // corp-blue
+                        borderRadius: 4,
+                        barPercentage: 0.6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '₩' + context.parsed.y.toLocaleString('ko-KR');
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: '#e5e7eb', drawBorder: false },
+                            ticks: {
+                                callback: function(value) {
+                                    if(value >= 100000000) return (value / 100000000).toFixed(1) + '억';
+                                    if(value >= 10000) return (value / 10000).toFixed(0) + '만';
+                                    return value;
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderCompanyTable() {
+            const tbody = document.getElementById('companyTableBody');
+            
+            // 업체별 집계
+            const compStats = {};
+            filteredData.forEach(row => {
+                const comp = row[colKeys.company] || '미상';
+                let rev = Number(row[colKeys.currRev] || 0);
+                if (isNaN(rev)) rev = 0;
+
+                if (!compStats[comp]) {
+                    compStats[comp] = { count: 0, totalRev: 0 };
+                }
+                compStats[comp].count++;
+                compStats[comp].totalRev += rev;
+            });
+
+            const sortedComps = Object.keys(compStats).sort((a,b) => compStats[b].totalRev - compStats[a].totalRev);
+
+            tbody.innerHTML = sortedComps.map((comp, index) => {
+                const stat = compStats[comp];
+                const avg = Math.round(stat.totalRev / stat.count);
+                const bgClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                return `
+                    <tr class="${bgClass} hover:bg-corp-light transition">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-800">${comp}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">${stat.count.toLocaleString('ko-KR')}건</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-corp-blue text-right">₩${stat.totalRev.toLocaleString('ko-KR')}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">₩${avg.toLocaleString('ko-KR')}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            if(sortedComps.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-gray-500">조회된 데이터가 없습니다.</td></tr>`;
+            }
+        }
+
+        // --- 6. Navigation Logic ---
+        function switchTab(tabId) {
+            // Reset active states
+            document.getElementById('tab-overview').className = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm';
+            document.getElementById('tab-company').className = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm';
+            
+            document.getElementById('view-overview').classList.add('hidden');
+            document.getElementById('view-company').classList.add('hidden');
+
+            // Set active
+            document.getElementById(`tab-${tabId}`).className = 'border-corp-blue text-corp-blue whitespace-nowrap py-4 px-1 border-b-2 font-bold text-sm';
+            document.getElementById(`view-${tabId}`).classList.remove('hidden');
+        }
+
+        // Start execution on window load
+        window.onload = initDashboard;
+
+    </script>
+</body>
+</html>
